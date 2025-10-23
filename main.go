@@ -106,14 +106,9 @@ func saveToSQLite(prices []GoldPrice) error {
 	return nil
 }
 
-func sendTelegram(cfg Config, prices []GoldPrice) {
+func sendTelegram(cfg Config, message string) {
 	if cfg.TelegramToken == "" || cfg.TelegramChatID == "" {
 		return
-	}
-
-	message := fmt.Sprintf("Giá vàng hôm nay - %s 💰\n", time.Now().Format(cfg.FormatTime))
-	for _, p := range prices {
-		message += fmt.Sprintf("• %s: Mua %s - Bán %s\n", p.Type, p.Buy, p.Sell)
 	}
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.TelegramToken)
@@ -124,17 +119,22 @@ func sendTelegram(cfg Config, prices []GoldPrice) {
 	})
 }
 
-func sendSlack(cfg Config, prices []GoldPrice) {
+func sendSlack(cfg Config, message string) {
 	if cfg.SlackWebhook == "" {
 		return
 	}
+
+	payload := fmt.Sprintf(`{"text": "%s"}`, strings.ReplaceAll(message, `"`, `\"`))
+	http.Post(cfg.SlackWebhook, "application/json", strings.NewReader(payload))
+}
+
+func formatMessage(cfg Config, prices []GoldPrice) string {
 	message := fmt.Sprintf("Giá vàng hôm nay - %s 💰\n", time.Now().Format(cfg.FormatTime))
 	for _, p := range prices {
 		message += fmt.Sprintf("• %s: Mua %s - Bán %s\n", p.Type, p.Buy, p.Sell)
 	}
 
-	payload := fmt.Sprintf(`{"text": "%s"}`, strings.ReplaceAll(message, `"`, `\"`))
-	http.Post(cfg.SlackWebhook, "application/json", strings.NewReader(payload))
+	return message
 }
 
 func main() {
@@ -145,7 +145,7 @@ func main() {
 		var nextRun time.Time
 
 		morning := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
-		afternoon := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, now.Location())
+		afternoon := time.Date(now.Year(), now.Month(), now.Day(), 17, 1, 0, 0, now.Location())
 
 		if now.Before(morning) {
 			nextRun = morning
@@ -168,8 +168,9 @@ func main() {
 		data, _ := json.MarshalIndent(prices, "", "  ")
 		os.WriteFile("latest.json", data, 0644)
 		saveToSQLite(prices)
-		sendTelegram(cfg, prices)
-		sendSlack(cfg, prices)
+		message := formatMessage(cfg, prices)
+		sendTelegram(cfg, message)
+		sendSlack(cfg, message)
 
 		log.Println("✅ Cập nhật giá vàng thành công:", time.Now())
 	}
